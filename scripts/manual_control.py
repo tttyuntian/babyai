@@ -11,7 +11,8 @@ import babyai
 
 def redraw(img):
     if not args.agent_view:
-        img = env.render('rgb_array', tile_size=args.tile_size)
+        #img = env.render('rgb_array', tile_size=args.tile_size)
+        img = env.render()
 
     window.show_img(img)
 

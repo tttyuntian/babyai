@@ -68,7 +68,15 @@ class ObjDesc:
 
         self.find_matching_objs(env)
         assert len(self.obj_set) > 0, "no object matching description"
-
+        """
+        try:
+            assert len(self.obj_set) > 0, "no object matching description"
+        except:
+            return ''  # FIXME: sometimes there are no matched objects
+            #print("OBJ_SET: ", self.obj_set)
+            #print("TYPE: ", self.type)
+            #print("COLOR: ", self.color)
+        """
         if self.type:
             s = str(self.type)
         else:
@@ -123,10 +131,24 @@ class ObjDesc:
 
                 # Check if object's type matches description
                 if self.type is not None and cell.type != self.type:
+                    """
+                    FIXME: for debugging purpose
+                    if i==2 and j==4:
+                        print("MISSION", env.mission)
+                        print("THIS CELL", env.render()[2][4])
+                        print("SELF.TYPE", self.type)
+                        print("CELL.TYPE", cell.type)
+                        print('self.type')
+                    """
                     continue
 
                 # Check if object's color matches description
                 if self.color is not None and cell.color != self.color:
+                    """
+                    FIXME: for debugging purpose
+                    if i==2 and j==4:
+                        print('self.color')
+                    """
                     continue
 
                 # Check if object's position matches description

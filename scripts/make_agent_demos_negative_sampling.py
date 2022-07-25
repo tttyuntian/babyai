@@ -70,7 +70,8 @@ def print_demo_lengths(demos):
 
 def generate_demos(n_episodes, valid, seed, shift=0):
     utils.seed(seed)
-
+    origin_seed = seed + 1
+    
     # Generate environment
     env = gym.make(args.env)
 
@@ -87,10 +88,28 @@ def generate_demos(n_episodes, valid, seed, shift=0):
 
         done = False
         if just_crashed:
+            # If it crashes, it means an environment is unsolvable
+            demos.append((
+                mission,
+                blosc.pack_array(np.array(images)),
+                blosc.pack_array(np.array(grids_rgb)),
+                blosc.pack_array(np.array(grids_raw)),
+                directions,
+                actions,
+                actions_text,
+                #env.instrs.surface(env),
+            ))
             logger.info("reset the environment to find a mission that the bot can solve")
-            env.reset()
+            
+            # Instead of reset the environment, directly go to the next environment
+            #env.reset()
+            env.seed(seed + 1)
         else:
-            env.seed(seed + len(demos))
+            #env.seed(seed + len(demos))
+            env.seed(seed + 1)
+        seed += 1  # always go to a new seed
+        logger.info(f"Seed id: {seed} / {origin_seed * 1000000}")
+        
         obs = env.reset()
         agent.on_reset()
 
@@ -121,6 +140,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
 
                 obs = new_obs
             if reward > 0 and (args.filter_steps == 0 or len(images) <= args.filter_steps):
+                """
                 demos.append((
                     mission,
                     blosc.pack_array(np.array(images)),
@@ -131,7 +151,9 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                     actions_text,
                     #env.instrs.surface(env),
                 ))
+                """
                 just_crashed = False
+                continue  # break the loop, since we want to collect an unsolvable demostration
 
             if reward == 0:
                 if args.on_exception == 'crash':

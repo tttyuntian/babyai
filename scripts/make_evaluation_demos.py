@@ -25,6 +25,44 @@ import torch
 
 import babyai.utils as utils
 
+# [object, color, state]
+COLOR_TO_IDX = {
+    'red'   : 0,
+    'green' : 1,
+    'blue'  : 2,
+    'purple': 3,
+    'yellow': 4,
+    'grey'  : 5
+}
+
+OBJECT_TO_IDX = {
+    'unseen'        : 0,
+    'empty'         : 1,
+    'wall'          : 2,
+    'floor'         : 3,
+    'door'          : 4,
+    'key'           : 5,
+    'ball'          : 6,
+    'box'           : 7,
+    'goal'          : 8,
+    'lava'          : 9,
+    'agent'         : 10,
+}
+
+STATE_TO_IDX = {
+    'open'  : 0,
+    'closed': 1,
+    'locked': 2,
+}
+
+IDX_TO_COLOR = {idx:color for color, idx in COLOR_TO_IDX.items()}
+IDX_TO_OBJECT = {idx:obj for obj, idx in OBJECT_TO_IDX.items()}
+IDX_TO_STATE = {idx:state for state, idx in STATE_TO_IDX.items()}
+
+COLOR_IDS = list(COLOR_TO_IDX.values())
+OBJECT_IDS = list(OBJECT_TO_IDX.values())
+
+
 # Parse arguments
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -34,6 +72,8 @@ parser.add_argument("--model", default='BOT',
                     help="name of the trained model (REQUIRED)")
 parser.add_argument("--demos", default=None,
                     help="path to save demonstrations (based on --model and --origin by default)")
+parser.add_argument("--is_negative", action="store_true", default=False,
+                    help="generate negative examples")
 parser.add_argument("--episodes", type=int, default=1000,
                     help="number of episodes to generate demonstrations for")
 parser.add_argument("--valid-episodes", type=int, default=512,
@@ -62,6 +102,29 @@ logger = logging.getLogger(__name__)
 # Set seed for all randomness sources
 
 
+def is_object_existing(img, object_tuple):
+    height, width, channel = img.shape
+    for h in range(height):
+        for w in range(width):
+            if all(img[h][w] == object_tuple):
+                return True
+    return False
+
+
+def get_object_name(color_id, object_id):
+    return f"{IDX_TO_COLOR[color_id]} {IDX_TO_OBJECT[object_id]}"
+
+
+def get_impossible_mission(img):
+    while True:
+        object_id = np.random.choice([5,6,7], size=1)[0]  # [key, ball, box]
+        color_id = np.random.choice(COLOR_IDS, size=1)[0]
+        object_tuple = [object_id, color_id, 0]
+
+        if not is_object_existing(img, object_tuple):
+            return f"go to the {get_object_name(color_id, object_id)}"
+
+        
 def print_demo_lengths(demos):
     num_frames_per_episode = [len(demo[2]) for demo in demos]
     logger.info('Demo length: {:.3f}+-{:.3f}'.format(
@@ -120,7 +183,12 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 directions.append(obs['direction'])
 
                 obs = new_obs
+            
             if reward > 0 and (args.filter_steps == 0 or len(images) <= args.filter_steps):
+                
+                if args.is_negative:
+                    mission = get_impossible_mission(grids_raw[0])
+                
                 demos.append((
                     mission,
                     blosc.pack_array(np.array(images)),
