@@ -25,6 +25,43 @@ import torch
 
 import babyai.utils as utils
 
+# [object, color, state]
+COLOR_TO_IDX = {
+    'red'   : 0,
+    'green' : 1,
+    'blue'  : 2,
+    'purple': 3,
+    'yellow': 4,
+    'grey'  : 5
+}
+
+OBJECT_TO_IDX = {
+    'unseen'        : 0,
+    'empty'         : 1,
+    'wall'          : 2,
+    'floor'         : 3,
+    'door'          : 4,
+    'key'           : 5,
+    'ball'          : 6,
+    'box'           : 7,
+    'goal'          : 8,
+    'lava'          : 9,
+    'agent'         : 10,
+}
+
+STATE_TO_IDX = {
+    'open'  : 0,
+    'closed': 1,
+    'locked': 2,
+}
+
+IDX_TO_COLOR = {idx:color for color, idx in COLOR_TO_IDX.items()}
+IDX_TO_OBJECT = {idx:obj for obj, idx in OBJECT_TO_IDX.items()}
+IDX_TO_STATE = {idx:state for state, idx in STATE_TO_IDX.items()}
+
+COLOR_IDS = list(COLOR_TO_IDX.values())
+OBJECT_IDS = list(OBJECT_TO_IDX.values())
+
 # Parse arguments
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -40,6 +77,8 @@ parser.add_argument("--valid-episodes", type=int, default=512,
                     help="number of validation episodes to generate demonstrations for")
 parser.add_argument("--seed", type=int, default=0,
                     help="start random seed")
+parser.add_argument("--unsolvable_prob", type=float, default=0,
+                    help="Probability of generating an unsolvable condition of a demonstration.")
 parser.add_argument("--argmax", action="store_true", default=False,
                     help="action with highest probability is selected")
 parser.add_argument("--log-interval", type=int, default=100,
@@ -62,6 +101,65 @@ logger = logging.getLogger(__name__)
 # Set seed for all randomness sources
 
 
+def is_object_existing(img, object_tuple):
+    height, width, channel = img.shape
+    for h in range(height):
+        for w in range(width):
+            if all(img[h][w] == object_tuple):
+                return True
+    return False
+
+
+def get_color_object_candidate(mission_tokenized):
+    candidate_id_list = []
+    for token_id in range(len(mission_tokenized) - 1):
+        token_0 = mission_tokenized[token_id]
+        token_1 = mission_tokenized[token_id + 1]
+        if token_0 in COLOR_TO_IDX.keys() and token_1 in OBJECT_TO_IDX.keys():
+            candidate_id_list.append((token_id, token_id+1))
+    return candidate_id_list
+
+
+def get_impossible_mission(img, mission, tolerance=20):
+    # Get color-object candidates
+    mission_tokenized = mission.split()
+    candidate_id_list = get_color_object_candidate(mission_tokenized)
+    if len(candidate_id_list) == 0:
+        return None
+    
+    # Randomly select a color-object phrase to replace
+    candidate_id = np.random.choice(list(range(len(candidate_id_list))), size=1)[0]
+    color_token_id, object_token_id = candidate_id_list[candidate_id]
+    color = mission_tokenized[color_token_id]
+    obj = mission_tokenized[object_token_id]
+    
+    tolerance = tolerance
+    count = 0
+    while True:
+        if count == tolerance:
+            # Reach to number of tolerance times, which means cannot find an impossible mission
+            return None
+
+        if obj != "door":
+            object_id = np.random.choice([5,6,7], size=1)[0]  # [key, ball, box]
+            color_id = np.random.choice(COLOR_IDS, size=1)[0]
+        else:
+            # Only replace the color of a "door" target
+            object_id = 4  # id for door
+            color_id = np.random.choice(COLOR_IDS, size=1)[0]
+        object_tuple = [object_id, color_id, 0]
+
+        if is_object_existing(img, object_tuple):
+            count += 1
+        else:
+            # Found an impossible mission
+            object_text = IDX_TO_OBJECT[object_id]
+            color_text = IDX_TO_COLOR[color_id]
+            mission_tokenized[color_token_id] = color_text
+            mission_tokenized[object_token_id] = object_text
+            return " ".join(mission_tokenized)
+
+
 def print_demo_lengths(demos):
     num_frames_per_episode = [len(demo[2]) for demo in demos]
     logger.info('Demo length: {:.3f}+-{:.3f}'.format(
@@ -73,8 +171,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
     origin_seed = seed + 1
     
     # Generate environment
-    env = gym.make(args.env)
-
+    env = gym.make(args.env, **{"unsolvable_prob": args.unsolvable_prob})
     agent = utils.load_agent(env, args.model, args.demos, 'agent', args.argmax, args.env)
     demos_path = utils.get_demos_path(args.demos, args.env, 'agent', valid)
     demos = []
@@ -83,6 +180,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
 
     just_crashed = False
     while True:
+        logger.info(f"Collected: {len(demos)}")
         if len(demos) == n_episodes:
             break
 
@@ -139,22 +237,33 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 directions.append(obs['direction'])
 
                 obs = new_obs
-            if reward > 0 and (args.filter_steps == 0 or len(images) <= args.filter_steps):
-                """
-                demos.append((
-                    mission,
-                    blosc.pack_array(np.array(images)),
-                    blosc.pack_array(np.array(grids_rgb)),
-                    blosc.pack_array(np.array(grids_raw)),
-                    directions,
-                    actions,
-                    actions_text,
-                    #env.instrs.surface(env),
-                ))
-                """
+            
+                if action.name == "done":
+                    # this means the replan_before_action tolerance has been reached,
+                    # and no action has been suggested
+                    just_crashed = True
+                    break
+            
+            if (not just_crashed) and reward > 0 and (args.filter_steps == 0 or len(images) <= args.filter_steps):
+                # If this is a solvable case, then give an impossible mission
+                mission = get_impossible_mission(grids_raw[0], mission, tolerance=20)
+                
+                if mission:
+                    # An impossible mission is found
+                    demos.append((
+                        mission,
+                        blosc.pack_array(np.array(images)),
+                        blosc.pack_array(np.array(grids_rgb)),
+                        blosc.pack_array(np.array(grids_raw)),
+                        directions,
+                        actions,
+                        actions_text,
+                        #env.instrs.surface(env),
+                    ))
+                
                 just_crashed = False
-                continue  # break the loop, since we want to collect an unsolvable demostration
-
+                #continue  # break the loop, since we want to collect an unsolvable demostration
+            
             if reward == 0:
                 if args.on_exception == 'crash':
                     raise Exception("mission failed, the seed is {}".format(seed + len(demos)))
