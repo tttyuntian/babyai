@@ -581,7 +581,10 @@ class Bot:
             self.stack.pop()
 
         suggested_action = None
+        replan_count = 0
+        tolerance = 10
         while self.stack:
+            """
             subgoal = self.stack[-1]
             suggested_action = subgoal.replan_before_action()
             # If is not clear what can be done for the current subgoal
@@ -589,6 +592,26 @@ class Bot:
             # or because exploration is required), keep replanning
             if suggested_action is not None:
                 break
+            """
+            try:
+                subgoal = self.stack[-1]
+                suggested_action = subgoal.replan_before_action()
+                # If is not clear what can be done for the current subgoal
+                # (because it is completed, because there is blocker,
+                # or because exploration is required), keep replanning
+                if suggested_action is not None:
+                    break
+                else:
+                    replan_count += 1
+                    if replan_count == tolerance:
+                        suggested_action = self.mission.actions.done
+                        break
+            except:
+                # "0nothing left to explore" error in replan_before_action(), 
+                # which means no need for further exploration
+                suggested_action = self.mission.actions.done
+                break
+            #"""
         if not self.stack:
             suggested_action = self.mission.actions.done
 
