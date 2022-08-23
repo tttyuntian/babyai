@@ -349,16 +349,17 @@ class LevelGen(RoomGridLevel):
             break
 
         # Until we find a room to put the key
-        while True:
-            i = self._rand_int(0, self.num_cols)
-            j = self._rand_int(0, self.num_rows)
-            key_room = self.get_room(i, j)
+        if self._rand_float(0, 1) < self.unsolvable_prob:
+            while True:
+                i = self._rand_int(0, self.num_cols)
+                j = self._rand_int(0, self.num_rows)
+                key_room = self.get_room(i, j)
 
-            if key_room is self.locked_room:
-                continue
+                if key_room is self.locked_room:
+                    continue
 
-            self.add_object(i, j, 'key', door.color)
-            break
+                self.add_object(i, j, 'key', door.color)
+                break
 
     def rand_obj(self, types=OBJ_TYPES, colors=COLOR_NAMES, max_tries=100):
         """

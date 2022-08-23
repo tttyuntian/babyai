@@ -582,7 +582,7 @@ class Bot:
 
         suggested_action = None
         replan_count = 0
-        tolerance = 10
+        tolerance = 50
         while self.stack:
             """
             subgoal = self.stack[-1]

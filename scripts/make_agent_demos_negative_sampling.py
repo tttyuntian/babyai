@@ -105,8 +105,16 @@ def is_object_existing(img, object_tuple):
     height, width, channel = img.shape
     for h in range(height):
         for w in range(width):
-            if all(img[h][w] == object_tuple):
-                return True
+            if object_tuple[0] == 4:
+                # this is a door, and we assume it's closed or locked
+                object_id, color_id = object_tuple[0], object_tuple[1]
+                if (all(img[h][w] == (object_id, color_id, 0)) or 
+                    all(img[h][w] == (object_id, color_id, 1)) or
+                    all(img[h][w] == (object_id, color_id, 2))):
+                    return True
+            else:
+                if all(img[h][w] == object_tuple):
+                    return True
     return False
 
 
@@ -175,6 +183,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
     agent = utils.load_agent(env, args.model, args.demos, 'agent', args.argmax, args.env)
     demos_path = utils.get_demos_path(args.demos, args.env, 'agent', valid)
     demos = []
+    missing_target_count = 0
 
     checkpoint_time = time.time()
 
@@ -182,6 +191,10 @@ def generate_demos(n_episodes, valid, seed, shift=0):
     while True:
         logger.info(f"Collected: {len(demos)}")
         if len(demos) == n_episodes:
+            report_path = f"{args.demos}_valid_report.txt" if valid else f"{args.demos}_report.txt"
+            with open(report_path, "w") as f:
+                f.write(f"Total: {args.episodes}\n")
+                f.write(f"Missing target: {missing_target_count}")
             break
 
         done = False
@@ -199,9 +212,17 @@ def generate_demos(n_episodes, valid, seed, shift=0):
             ))
             logger.info("reset the environment to find a mission that the bot can solve")
             
+            if len(demos) == n_episodes:
+                report_path = f"{args.demos}_valid_report.txt" if valid else f"{args.demos}_report.txt"
+                with open(report_path, "w") as f:
+                    f.write(f"Total: {args.episodes}\n")
+                    f.write(f"Missing target: {missing_target_count}")
+                break
+            
             # Instead of reset the environment, directly go to the next environment
             #env.reset()
             env.seed(seed + 1)
+            
         else:
             #env.seed(seed + len(demos))
             env.seed(seed + 1)
@@ -210,6 +231,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
         
         obs = env.reset()
         agent.on_reset()
+        just_crashed = False
 
         actions_text = []
         actions = []
@@ -237,13 +259,12 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 directions.append(obs['direction'])
 
                 obs = new_obs
-            
                 if action.name == "done":
                     # this means the replan_before_action tolerance has been reached,
                     # and no action has been suggested
                     just_crashed = True
                     break
-            
+                
             if (not just_crashed) and reward > 0 and (args.filter_steps == 0 or len(images) <= args.filter_steps):
                 # If this is a solvable case, then give an impossible mission
                 mission = get_impossible_mission(grids_raw[0], mission, tolerance=20)
@@ -260,9 +281,9 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                         actions_text,
                         #env.instrs.surface(env),
                     ))
-                
+                    missing_target_count += 1
                 just_crashed = False
-                #continue  # break the loop, since we want to collect an unsolvable demostration
+                continue  # break the loop, since we want to collect an unsolvable demostration
             
             if reward == 0:
                 if args.on_exception == 'crash':
