@@ -271,8 +271,7 @@ class LevelGen(RoomGridLevel):
         implicit_unlock=True,
         action_kinds=['goto', 'pickup', 'open', 'putnext'],
         instr_kinds=['action', 'and', 'seq'],
-        seed=None,
-        unsolvable_prob=0,
+        seed=None
     ):
         self.num_dists = num_dists
         self.locked_room_prob = locked_room_prob
@@ -281,7 +280,6 @@ class LevelGen(RoomGridLevel):
         self.implicit_unlock = implicit_unlock
         self.action_kinds = action_kinds
         self.instr_kinds = instr_kinds
-        self.unsolvable_prob = unsolvable_prob
 
         self.locked_room = None
 
@@ -296,7 +294,6 @@ class LevelGen(RoomGridLevel):
         if self._rand_float(0, 1) < self.locked_room_prob:
             self.add_locked_room()
         
-        if self._rand_float(0, 1) > self.unsolvable_prob:
             self.connect_all()
 
         self.add_distractors(num_distractors=self.num_dists, all_unique=False)
@@ -305,15 +302,9 @@ class LevelGen(RoomGridLevel):
         while True:
             self.place_agent()
             start_room = self.room_from_pos(*self.agent_pos)
-            
-            if self._rand_float(0, 1) < self.unsolvable_prob:
-                # Mess up the environment by leaving the agent in the locked room
-                if start_room is not self.locked_room:
-                    continue
-            else:
-                # Ensure that we are not placing the agent in the locked room
-                if start_room is self.locked_room:
-                    continue
+            # Ensure that we are not placing the agent in the locked room
+            if start_room is self.locked_room:
+                continue
             break
 
         # If no unblocking required, make sure all objects are
@@ -349,17 +340,16 @@ class LevelGen(RoomGridLevel):
             break
 
         # Until we find a room to put the key
-        if self._rand_float(0, 1) < self.unsolvable_prob:
-            while True:
-                i = self._rand_int(0, self.num_cols)
-                j = self._rand_int(0, self.num_rows)
-                key_room = self.get_room(i, j)
+        while True:
+            i = self._rand_int(0, self.num_cols)
+            j = self._rand_int(0, self.num_rows)
+            key_room = self.get_room(i, j)
 
-                if key_room is self.locked_room:
-                    continue
+            if key_room is self.locked_room:
+                continue
 
-                self.add_object(i, j, 'key', door.color)
-                break
+            self.add_object(i, j, 'key', door.color)
+            break
 
     def rand_obj(self, types=OBJ_TYPES, colors=COLOR_NAMES, max_tries=100):
         """

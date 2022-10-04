@@ -646,11 +646,9 @@ class Level_MiniBossLevel(LevelGen):
 
 
 class Level_BossLevel(LevelGen):
-    def __init__(self, seed=None, **kwargs):
-        unsolvable_prob = kwargs["unsolvable_prob"] if "unsolvable_prob" in kwargs.keys() else -1
+    def __init__(self, seed=None):
         super().__init__(
-            seed=seed,
-            unsolvable_prob=unsolvable_prob,
+            seed=seed
         )
 
 class Level_BossLevelNoUnlock(LevelGen):
