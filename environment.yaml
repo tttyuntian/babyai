@@ -1,4 +1,4 @@
-name: babyai
+name: babyai_visual_commonsense
 channels:
     - pytorch
     - defaults

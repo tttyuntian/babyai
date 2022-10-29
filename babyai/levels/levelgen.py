@@ -294,7 +294,7 @@ class LevelGen(RoomGridLevel):
         if self._rand_float(0, 1) < self.locked_room_prob:
             self.add_locked_room()
         
-            self.connect_all()
+        self.connect_all()
 
         self.add_distractors(num_distractors=self.num_dists, all_unique=False)
 

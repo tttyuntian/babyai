@@ -1,6 +1,6 @@
 #!/bin/bash
 
-level_list=( "GoToLocal" )
+level_list=( "BossLevel" )
 #level_list=( "BossLevel" )
 #level_list=( "BossLevel" "PickupLoc" "GoToObjMaze" "GoTo" "Pickup" "UnblockPickup" "Open" "Unlock" "PutNext" "Synth" "SynthLoc" "GoToSeq" "SynthSeq" "GoToImpUnlock" )
 
@@ -10,7 +10,7 @@ level_list=( "GoToLocal" )
 
 for level_name in "${level_list[@]}"
 do
-    for split_id in {0..9}
+    for split_id in {0..0}
     do
         echo BabyAI-${level_name}-v0-split-${split_id}
         python ./scripts/make_agent_demos.py --env BabyAI-${level_name}-v0 \
