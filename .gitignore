@@ -1,6 +1,9 @@
 model/glove50.txt
 trained_models
 
+# Customized
+bash_scripts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
