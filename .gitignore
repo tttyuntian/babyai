@@ -1,3 +1,7 @@
+# Customized
+data/
+
+# Models
 model/glove50.txt
 trained_models
 
