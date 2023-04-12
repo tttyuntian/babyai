@@ -19,8 +19,10 @@ import sys
 import subprocess
 import os
 import time
-import numpy as np
+
 import blosc
+from gym_minigrid.minigrid import Grid
+import numpy as np
 import torch
 
 import babyai.utils as utils
@@ -97,7 +99,8 @@ def generate_demos(n_episodes, valid, seed, shift=0):
         actions_text = []
         actions = []
         mission = obs["mission"]
-        images = []
+        images_rgb = []
+        images_raw = []
         grids_rgb = []
         grids_raw = []
         directions = []
@@ -114,16 +117,20 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 actions_text.append(action.name)
                 actions.append(action.value)
 
-                images.append(obs['image'])
+                image_rgb, _ = Grid.decode(obs['image'])
+                images_rgb.append(image_rgb.render(tile_size=32))
+                images_raw.append(obs['image'])
                 grids_rgb.append(obs['grid_rgb'])
                 grids_raw.append(obs['grid_raw'])
                 directions.append(obs['direction'])
 
                 obs = new_obs
+                
             if reward > 0 and (args.filter_steps == 0 or len(images) <= args.filter_steps):
                 demos.append((
                     mission,
-                    blosc.pack_array(np.array(images)),
+                    blosc.pack_array(np.array(images_rgb)),
+                    blosc.pack_array(np.array(images_raw)),
                     blosc.pack_array(np.array(grids_rgb)),
                     blosc.pack_array(np.array(grids_raw)),
                     directions,
