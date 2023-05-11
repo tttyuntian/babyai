@@ -104,6 +104,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
         grids_rgb = []
         grids_raw = []
         directions = []
+        agent_pos = []
 
         try:
             while not done:
@@ -122,6 +123,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 images_raw.append(obs['image'])
                 grids_rgb.append(obs['grid_rgb'])
                 grids_raw.append(obs['grid_raw'])
+                agent_pos.append(obs['agent_pos'])
                 directions.append(obs['direction'])
 
                 obs = new_obs
@@ -133,6 +135,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                     blosc.pack_array(np.array(images_raw)),
                     blosc.pack_array(np.array(grids_rgb)),
                     blosc.pack_array(np.array(grids_raw)),
+                    agent_pos,
                     directions,
                     actions,
                     actions_text,
