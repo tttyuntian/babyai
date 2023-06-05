@@ -282,6 +282,8 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 agent_pos.append(obs['agent_pos'])
                 directions.append(obs['direction'])
                 
+                obs = new_obs  # update obs to next step
+                
             if reward > 0 and (args.filter_steps == 0 or len(images) <= args.filter_steps):
                 demos.append((
                     mission,
@@ -297,8 +299,6 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 ))
                 just_crashed = False
                 rule_count_dict = update_rule_count_dict(rule_count_dict, obs)
-
-            obs = new_obs  # update obs to next step
                 
             if reward == 0:
                 if args.on_exception == 'crash':
