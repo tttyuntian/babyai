@@ -280,13 +280,14 @@ def generate_demos(n_episodes, valid, seed, shift=0):
     agent = utils.agent.RandomAgent(number_of_actions=3)
     demos_path = utils.get_demos_path(args.demos, args.env, f'rule_probing/{seed}', valid)
     demos = []
+    collected_str = set()
 
     checkpoint_time = time.time()
 
     just_crashed = False
     # rule_count_dict = defaultdict(int)  # Make sure the generated split covers all the rules evenly
     # rule_threshold = n_episodes // 15 + 1  # WARN: Hardcoded 15, which may change based on the restriction rules.
-    max_num_steps = 100
+    max_num_steps = 64
     
     
     while True:
@@ -341,8 +342,9 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 directions.append(obs['direction'])
             
                 obs = new_obs  # update obs to next step
-                
-            if reward > 0 and (args.filter_steps == 0 or len(images_raw) <= args.filter_steps):
+            
+            actions_str = blosc.pack_array(np.array(actions))
+            if reward > 0 and actions_str not in collected_str and (args.filter_steps == 0 or len(images_raw) <= args.filter_steps):
                 demos.append((
                     mission,
                     blosc.pack_array(np.array(images_rgb)),
@@ -356,6 +358,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                     #env.instrs.surface(env),
                 ))
                 just_crashed = False
+                collected_str.add(actions_str)
                 
             if reward == 0:
                 if args.on_exception == 'crash':
@@ -457,4 +460,4 @@ else:
 # Validation demos
 if args.valid_episodes:
     #generate_demos(args.valid_episodes, True, int(1e9))
-    generate_demos(args.valid_episodes, True, args.seed+500000)  # seed+500000 to get rid of generating same demos as the training ones
+    generate_demos(args.valid_episodes, True, args.seed)  # seed+500000 to get rid of generating same demos as the training ones
