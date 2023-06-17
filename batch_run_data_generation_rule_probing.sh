@@ -11,7 +11,7 @@ done
 
 echo BabyAI-${level_name}-v0-seed-${seed}
 python ./scripts/make_agent_demos_rule_probing.py --env BabyAI-${level_name}-v0 \
-    --demos ../data/exp3_data/BabyAI-${level_name}-v0/seed-${seed} \
-    --episodes 1000 \
+    --demos ../data/finetune/BabyAI-${level_name}-v0/seed-${seed} \
+    --episodes 10000 \
     --valid-episodes 0 \
-    --seed $((${seed} * 1000000))
+    --seed ${seed}
