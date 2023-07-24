@@ -26,8 +26,10 @@ import blosc
 from gym_minigrid.minigrid import Grid, Wall, MiniGridEnv
 import numpy as np
 import torch
+from tqdm import tqdm
 
 import babyai.utils as utils
+from random import Random
 
 
 # [object, color, state]
@@ -229,33 +231,35 @@ def parse_env(env: MiniGridEnv):
     return pos2obj
 
 
-def is_successful(agent_pos, agent_dir, mission_pos):
-    '''
-    mission_pos: target object position
-    '''
-    terminal = False
+def get_face_pos(agent_pos, agent_dir):
     if agent_dir == 0: # '>'
-        terminal = (mission_pos[0] == agent_pos[0] + 1) and (mission_pos[1] == agent_pos[1])
+        face_pos = (agent_pos[0] + 1, agent_pos[1])
     elif agent_dir == 1: # 'V'
-        terminal = (mission_pos[0] == agent_pos[0]) and (mission_pos[1] == agent_pos[1] + 1)
+        face_pos = (agent_pos[0], agent_pos[1] + 1)
     elif agent_dir == 2: # '<'
-        terminal = (mission_pos[0] == agent_pos[0] - 1) and (mission_pos[1] == agent_pos[1])
+        face_pos = (agent_pos[0] - 1, agent_pos[1])
     elif agent_dir == 3: # '^'
-        terminal = (mission_pos[0] == agent_pos[0]) and (mission_pos[1] == agent_pos[1] - 1)
+        face_pos = (agent_pos[0], agent_pos[1] - 1)
     else:
         raise NotImplementedError
-    return terminal
+
+    return face_pos
 
 
-def success_terminal(agent_pos, agent_dir, mission_cnt):
+def success_terminal(agent_pos, agent_dir, mission_cnt, pos_to_obj, visited):
     '''
     mission_cnt: A Dict where the key is mission_pos and the value is the number of trajectories left to generate
+    visited: visited objects set
     '''
-    for mission_pos in mission_cnt:
-        if mission_cnt[mission_pos] > 0 and is_successful(agent_pos, agent_dir, mission_pos):
-            mission_cnt[mission_pos] -= 1  # update cnt for corresponding mission
-            return True, mission_pos
-        
+
+    face_pos = get_face_pos(agent_pos=agent_pos, agent_dir=agent_dir)
+    if face_pos in mission_cnt.keys() and mission_cnt[face_pos] > 0: # face pos is an object and its counter is greater than zero
+        target_obj = pos_to_obj[face_pos]
+        if (target_obj.color, target_obj.type) not in visited:  # if the same object has not been visited before
+            mission_cnt[face_pos] -= 1
+            visited.add((target_obj.color, target_obj.type))
+            return True, face_pos
+    
     return False, None
 
 
@@ -263,6 +267,37 @@ def print_demo_lengths(demos):
     num_frames_per_episode = [len(demo[2]) for demo in demos]
     logger.info('Demo length: {:.3f}+-{:.3f}'.format(
         np.mean(num_frames_per_episode), np.std(num_frames_per_episode)))
+
+
+class CustomRandomAgent:
+    """A newly initialized model-based agent."""
+
+    def __init__(self, seed=0, number_of_actions=3):
+        self.rng = Random(seed)
+        self.number_of_actions = number_of_actions
+        self.hit_wall_cnt = 0
+        self.hit_wall_tol = 3
+        # action:
+        #   0: left
+        #   1: fight
+        #   2: foward
+
+    def act(self, obs):
+        action = self.rng.randint(0, self.number_of_actions - 1)
+        agent_pos, agent_dir = obs['agent_pos'], obs['direction']
+        face_pos = get_face_pos(agent_pos, agent_dir)
+        if obs['grid_raw'][face_pos[0], face_pos[1], 0] != 1:  # if facing wall
+            if action == 2:  # if hitting wall, increase hit_wall_cnt
+                self.hit_wall_cnt += 1
+                if self.hit_wall_cnt == self.hit_wall_tol:  # if hit_wall_cnt reaches hit_wall_tol, only turn left or right, and reset hit_wall_cnt
+                    action = self.rng.randint(0, 1)
+                    self.hit_wall_cnt = 0
+            else:
+                self.hit_wall_cnt = 0
+
+        return {'action': torch.tensor(action),
+                'dist': None,
+                'value': None}
 
 
 def generate_demos(n_episodes, valid, seed, shift=0):
@@ -277,23 +312,20 @@ def generate_demos(n_episodes, valid, seed, shift=0):
     mission_cnt = {pos: n_episodes // len(pos_to_obj) + 1 for pos in pos_to_obj}
 
 
-    agent = utils.agent.RandomAgent(number_of_actions=3)
+    agent = CustomRandomAgent(number_of_actions=3)
     demos_path = utils.get_demos_path(args.demos, args.env, f'rule_probing/{seed}', valid)
     demos = []
+    collected_str = set()
 
     checkpoint_time = time.time()
-
-    just_crashed = False
     # rule_count_dict = defaultdict(int)  # Make sure the generated split covers all the rules evenly
     # rule_threshold = n_episodes // 15 + 1  # WARN: Hardcoded 15, which may change based on the restriction rules.
-    max_num_steps = 100
+    max_num_steps = 64
     
     
     while True:
-        if len(demos) == n_episodes:
+        if len(demos) >= n_episodes:
             break
-
-        reward = 0
 
         env.seed(seed)  # need to re-seed everytime to make sure the same initial state
         obs = env.reset()
@@ -313,14 +345,31 @@ def generate_demos(n_episodes, valid, seed, shift=0):
         grids_raw = []
         directions = []
         agent_pos = []
+        visited_obj = set()
 
         try:
             for _ in range(max_num_steps):
-                done, mission_pos = success_terminal(agent_pos=obs['agent_pos'], agent_dir=obs['direction'], mission_cnt=mission_cnt)
-                if done:
-                    mission = pos_to_mission[mission_pos]
-                    reward = 1.  # consider it as success
-                    break
+                action_str = blosc.pack_array(np.array(actions))
+                duplicate_flag = action_str in collected_str
+                if not duplicate_flag:
+                    done, mission_pos = success_terminal(agent_pos=obs['agent_pos'], agent_dir=obs['direction'], mission_cnt=mission_cnt, pos_to_obj=pos_to_obj, visited=visited_obj)
+                    if done:
+                        logger.info(f"collected demos: {len(demos)} / {n_episodes}")
+
+                        mission = pos_to_mission[mission_pos]
+                        demos.append((
+                            mission,
+                            blosc.pack_array(np.array(images_rgb)),
+                            blosc.pack_array(np.array(images_raw)),
+                            blosc.pack_array(np.array(grids_rgb)),
+                            blosc.pack_array(np.array(grids_raw)),
+                            agent_pos.copy(),
+                            directions.copy(),
+                            actions.copy(),
+                            actions_text.copy(),
+                        ))
+
+                        collected_str.add(action_str)
 
                 action = agent.act(obs)['action']
                 if isinstance(action, torch.Tensor):
@@ -341,27 +390,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 directions.append(obs['direction'])
             
                 obs = new_obs  # update obs to next step
-                
-            if reward > 0 and (args.filter_steps == 0 or len(images_raw) <= args.filter_steps):
-                demos.append((
-                    mission,
-                    blosc.pack_array(np.array(images_rgb)),
-                    blosc.pack_array(np.array(images_raw)),
-                    blosc.pack_array(np.array(grids_rgb)),
-                    blosc.pack_array(np.array(grids_raw)),
-                    agent_pos,
-                    directions,
-                    actions,
-                    actions_text,
-                    #env.instrs.surface(env),
-                ))
-                just_crashed = False
-                
-            if reward == 0:
-                if args.on_exception == 'crash':
-                    raise Exception("mission failed, the seed is {}".format(seed + len(demos)))
-                just_crashed = True
-                logger.info("mission failed")
+
         except (Exception, AssertionError):
             if args.on_exception == 'crash':
                 raise
@@ -457,4 +486,4 @@ else:
 # Validation demos
 if args.valid_episodes:
     #generate_demos(args.valid_episodes, True, int(1e9))
-    generate_demos(args.valid_episodes, True, args.seed+500000)  # seed+500000 to get rid of generating same demos as the training ones
+    generate_demos(args.valid_episodes, True, args.seed)  # seed+500000 to get rid of generating same demos as the training ones
