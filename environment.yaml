@@ -9,4 +9,5 @@ dependencies:
     - blosc
     - pip
     - pip:
+        - "git+https://github.com/tttyuntian/gym.git@abstract-state-seqmodel"
         - scikit-build
